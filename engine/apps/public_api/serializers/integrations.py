@@ -379,6 +379,37 @@ class IntegrationSerializer(EagerLoadingMixin, serializers.ModelSerializer, Main
             return None
         return IntegrationHeartBeatSerializer(heartbeat).data
 
+    def _add_service_label_if_needed(self, organization, validated_data):
+        """
+        Add service_name label configuration to validated_data for Grafana Alerting integrations.
+        This method ensures that the service_name dynamic label is properly configured during creation.
+        """
+        from apps.alerts.constants import SERVICE_LABEL, SERVICE_LABEL_TEMPLATE_FOR_ALERTING_INTEGRATION
+        from apps.labels.models import LabelKeyCache
+
+        # Get or create the service_name label key
+        service_label_key = LabelKeyCache.get_or_create_by_name(organization, SERVICE_LABEL)
+        if service_label_key:
+            # Create the service_name dynamic label entry
+            service_name_dynamic_label = [
+                service_label_key.id, 
+                None, 
+                SERVICE_LABEL_TEMPLATE_FOR_ALERTING_INTEGRATION
+            ]
+            
+            # Add to alert_group_labels_custom if it doesn't already exist
+            current_labels = validated_data.get("alert_group_labels_custom", []) or []
+            
+            # Check if service_name label already exists
+            service_label_exists = any(
+                label[0] == service_label_key.id for label in current_labels
+            )
+            
+            if not service_label_exists:
+                validated_data["alert_group_labels_custom"] = [service_name_dynamic_label] + current_labels
+        
+        return validated_data
+
     @timed_lru_cache(timeout=5)
     def _get_default_route_iterative(self, obj):
         """
